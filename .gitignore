@@ -1,0 +1,13 @@
+# Python / Environment
+.venv/
+__pycache__/
+*.pyc
+
+# Data & Output Files
+data/
+*.csv
+*.json
+*.jsonl
+
+# System
+.DS_Store
