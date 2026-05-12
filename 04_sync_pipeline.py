@@ -73,7 +73,6 @@ LEXICONS = {
 
 
 def keyword_score(text: str) -> dict:
-    """Return per-category hit counts and matched terms."""
     lower = text.lower()
     hits = {}
     matched = {}
@@ -175,10 +174,6 @@ def llm_score(email: dict) -> dict:
 
 
 def run_pipeline(emails: list[dict]) -> tuple[pd.DataFrame, list[dict]]:
-    """
-    Full two-stage pipeline.
-    Returns (scored_df, flagged_emails) where flagged_emails are all SUSPICIOUS+ results.
-    """
     print(f"\n{'='*60}")
     print("  ENRON FRAUD DETECTION PIPELINE")
     print(f"{'='*60}")
@@ -266,7 +261,6 @@ def run_pipeline(emails: list[dict]) -> tuple[pd.DataFrame, list[dict]]:
         print(f"       From    : {e['from']}")
         print(f"       Evidence: {e.get('rationale','')}")
 
-    # ── Save outputs ──
     df.to_csv("enron_scored_emails.csv", index=False)
     with open("enron_flagged_emails.json", "w") as f:
         out = [{k: v for k, v in e.items() if not k.startswith("_")} for e in flagged]
@@ -323,10 +317,6 @@ def load_corpus_elasticsearch_scroll(
     scroll_keepalive: str | None = None,
     batch_size: int | None = None,
 ) -> list[dict]:
-    """
-    Load every matching document using the Scroll API (no 10k cap).
-    Uses match_all if query is None.
-    """
     query = query or {"match_all": {}}
     batch_size = batch_size if batch_size is not None else _resolve_scroll_batch_size()
     scroll_keepalive = scroll_keepalive or os.environ.get("ENRON_SCROLL_KEEPALIVE", DEFAULT_SCROLL_KEEPALIVE)
@@ -423,11 +413,8 @@ def load_corpus_elasticsearch(max_emails: int | None = None) -> list[dict]:
     """
     max_emails = _resolve_max_emails_es(max_emails)
 
-    # Use match_all so no emails are dropped at the ES level due to lexicon gaps.
-    # Noise filtering (PR digests, post-scandal dates) is handled below.
     keyword_clause = {"match_all": {}}
 
-    # Exclude PR/news digest senders and subjects
     pr_senders = ["sarah.palmer@enron.com", "karen.denne@enron.com"]
     digest_subjects = [
         "Enron Mentions", "Press Review", "major papers only",
@@ -467,7 +454,6 @@ def load_corpus_elasticsearch(max_emails: int | None = None) -> list[dict]:
 
     try:
         print(f"Connecting to Enron Elasticsearch at {base} (index={index})…")
-        # POST is required for reliable _search with a body; GET+body often gets 403 from proxies.
         r = requests.post(
             url,
             json=doc,
@@ -504,12 +490,6 @@ def load_corpus(
     max_emails: int | None = None,
     full_corpus: bool = False,
 ) -> list[dict]:
-    """
-    Load emails from a directory of .txt files (Enron corpus format),
-    or from Elasticsearch if no directory is given.
-    max_emails: single-page keyword search only (ignored when full_corpus=True).
-    full_corpus: scroll the entire index (match_all), all documents.
-    """
     if full_corpus and email_dir:
         raise ValueError("full_corpus cannot be used together with a local maildir path.")
 
@@ -546,10 +526,6 @@ def load_corpus(
         return load_corpus_elasticsearch_scroll()
     return load_corpus_elasticsearch(max_emails=max_emails)
 
-
-# ─────────────────────────────────────────────
-# ENTRY POINT
-# ─────────────────────────────────────────────
 
 if __name__ == "__main__":
     import argparse

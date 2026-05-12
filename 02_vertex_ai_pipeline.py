@@ -1,9 +1,7 @@
 """
-Enron Fraud Detection Pipeline — Vertex AI Batch
+Enron Fraud Detection Pipeline: Vertex AI Batch
 Focus: Earnings Manipulation / Concealment of Financial Losses
 
-Usage:
-    python enron3.py
 
 Requirements:
     pip install google-cloud-aiplatform google-cloud-storage requests pandas
@@ -27,12 +25,12 @@ GCP_LOCATION    = os.environ.get("GCP_LOCATION", "us-central1")
 GCS_BUCKET      = os.environ.get("GCS_BUCKET", "enron-project23-batch")
 
 MODEL           = "gemini-2.5-flash"       
-HIGH_RISK_THRESHOLD  = 18       # Wn ≥ 18 = High Probability
-SUSPICIOUS_THRESHOLD = 12       # 12 ≤ Wn < 18 = Suspicious
-DATE_FROM = "1999-01-01"     # Focus window start (LJM/Raptors creation)
-DATE_TO   = "2002-12-31"     # Focus window end (post-bankruptcy filings)
+HIGH_RISK_THRESHOLD  = 18      
+SUSPICIOUS_THRESHOLD = 12      
+DATE_FROM = "1999-01-01"     
+DATE_TO   = "2002-12-31"     
 
-CORPUS_PATH     = "data/emros_curpose.json" 
+CORPUS_PATH     = "data/emros_curpose.json" #change this once you get this from ES
 SAVE_PATH       = Path("data")
 
 

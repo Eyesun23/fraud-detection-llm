@@ -6,8 +6,7 @@ Requirements:
     pip install requests pandas
 
 Usage:
-    Set GEMINI_API_KEY in your environment, then:
-    python enron.py
+    Set GEMINI_API_KEY in your environment
 
     Optional env: ENRON_ES_HOST, ENRON_ES_INDEX, ENRON_MAX_EMAILS, ENRON_SCROLL_SIZE (batch size when using --full-corpus).
     With no maildir argument, the corpus is loaded only from Elasticsearch (no embedded fallback).
@@ -194,10 +193,6 @@ def load_corpus_elasticsearch_scroll(
     scroll_keepalive: str | None = None,
     batch_size: int | None = None,
 ) -> list[dict]:
-    """
-    Load every matching document using the Scroll API (no 10k cap).
-    Uses match_all if query is None.
-    """
     query = query or {"match_all": {}}
     batch_size = batch_size if batch_size is not None else _resolve_scroll_batch_size()
     scroll_keepalive = scroll_keepalive or os.environ.get("ENRON_SCROLL_KEEPALIVE", DEFAULT_SCROLL_KEEPALIVE)
@@ -285,19 +280,11 @@ def load_corpus_elasticsearch_scroll(
 
 
 def load_corpus_elasticsearch(max_emails: int | None = None) -> list[dict]:
-    """
-    Load emails from the Enron Elasticsearch corpus.
-    Queries for fraud-related keywords to find the most relevant emails.
-    Raises RuntimeError if Elasticsearch is unreachable or returns no hits.
-
-    max_emails: page size for one _search (default from ENRON_MAX_EMAILS or DEFAULT_MAX_EMAILS_ES).
-    """
     max_emails = _resolve_max_emails_es(max_emails)
 
-    # Build a query using our lexicon keywords to find relevant emails
     fraud_keywords = []
     for terms in LEXICONS.values():
-        fraud_keywords.extend(terms[:5])  # top 5 from each category
+        fraud_keywords.extend(terms[:5])  
     query_string = " OR ".join(f'"{t}"' for t in fraud_keywords if " " in t or len(t) > 3)
 
     if query_string.strip():
@@ -323,7 +310,6 @@ def load_corpus_elasticsearch(max_emails: int | None = None) -> list[dict]:
 
     try:
         print(f"Connecting to Enron Elasticsearch at {base} (index={index})…")
-        # POST is required for reliable _search with a body; GET+body often gets 403 from proxies.
         r = requests.post(
             url,
             json=doc,
@@ -361,12 +347,6 @@ def load_corpus(
     full_corpus: bool = False,
     save_corpus_path: str = '.',
 ) -> list[dict]:
-    """
-    Load emails from a directory of .txt files (Enron corpus format),
-    or from Elasticsearch if no directory is given.
-    max_emails: single-page keyword search only (ignored when full_corpus=True).
-    full_corpus: scroll the entire index (match_all), all documents.
-    """
     if full_corpus and email_dir:
         raise ValueError("full_corpus cannot be used together with a local maildir path.")
 
@@ -414,7 +394,6 @@ def get_and_prepare_path(folder_name):
     return full_path
 
 async def llm_score_async(client: httpx.AsyncClient, email: dict, sem: asyncio.Semaphore, model: str = MODEL_FAST) -> dict:
-    """Asynchronous call to Gemini API for a single email, with retry on 429."""
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={API_KEY}"
 
     payload = {
@@ -480,7 +459,6 @@ async def process_batch(emails: list[dict], limits, model: str = MODEL_FAST) -> 
         return results
 
 def key_word_filtering(emails: list[dict], save_path = '.'):
-    # List to collect data for the CSV
     csv_data = []
     filtered = []
     stage1_verbose = len(emails) <= 200

@@ -6,8 +6,7 @@ Requirements:
     pip install requests pandas
 
 Usage:
-    Set GEMINI_API_KEY in your environment, then:
-    python enron.py
+    Set GEMINI_API_KEY in your environment
 
     Optional env: ENRON_ES_HOST, ENRON_ES_INDEX, ENRON_MAX_EMAILS, ENRON_SCROLL_SIZE (batch size when using --full-corpus).
     With no maildir argument, the corpus is loaded only from Elasticsearch (no embedded fallback).
@@ -80,7 +79,6 @@ LEXICONS = {
 
 
 def keyword_score(text: str) -> dict:
-    """Return per-category hit counts and matched terms."""
     lower = text.lower()
     hits = {}
     matched = {}
@@ -140,9 +138,7 @@ Return ONLY this JSON (no other text):
   "rationale": "One to two sentence summary of the key evidence found."
 }}"""
 
-# ─────────────────────────────────────────────
-# CORPUS LOADER
-# ─────────────────────────────────────────────
+
 
 def _es_base_url() -> str:
     base = os.environ.get("ENRON_ES_HOST", "http://18.188.56.207:9200").rstrip("/")
@@ -150,7 +146,6 @@ def _es_base_url() -> str:
 
 
 def _resolve_max_emails_es(explicit: int | None) -> int:
-    """Elasticsearch page size for _search (capped at max_result_window)."""
     if explicit is not None:
         n = explicit
     else:
@@ -188,10 +183,6 @@ def load_corpus_elasticsearch_scroll(
     scroll_keepalive: str | None = None,
     batch_size: int | None = None,
 ) -> list[dict]:
-    """
-    Load every matching document using the Scroll API (no 10k cap).
-    Uses match_all if query is None.
-    """
     query = query or {"match_all": {}}
     batch_size = batch_size if batch_size is not None else _resolve_scroll_batch_size()
     scroll_keepalive = scroll_keepalive or os.environ.get("ENRON_SCROLL_KEEPALIVE", DEFAULT_SCROLL_KEEPALIVE)
@@ -288,10 +279,9 @@ def load_corpus_elasticsearch(max_emails: int | None = None) -> list[dict]:
     """
     max_emails = _resolve_max_emails_es(max_emails)
 
-    # Build a query using our lexicon keywords to find relevant emails
     fraud_keywords = []
     for terms in LEXICONS.values():
-        fraud_keywords.extend(terms[:5])  # top 5 from each category
+        fraud_keywords.extend(terms[:5]) 
     query_string = " OR ".join(f'"{t}"' for t in fraud_keywords if " " in t or len(t) > 3)
 
     if query_string.strip():
@@ -317,7 +307,6 @@ def load_corpus_elasticsearch(max_emails: int | None = None) -> list[dict]:
 
     try:
         print(f"Connecting to Enron Elasticsearch at {base} (index={index})…")
-        # POST is required for reliable _search with a body; GET+body often gets 403 from proxies.
         r = requests.post(
             url,
             json=doc,
@@ -355,12 +344,6 @@ def load_corpus(
     full_corpus: bool = False,
     save_corpus_path: str = '.',
 ) -> list[dict]:
-    """
-    Load emails from a directory of .txt files (Enron corpus format),
-    or from Elasticsearch if no directory is given.
-    max_emails: single-page keyword search only (ignored when full_corpus=True).
-    full_corpus: scroll the entire index (match_all), all documents.
-    """
     if full_corpus and email_dir:
         raise ValueError("full_corpus cannot be used together with a local maildir path.")
 
@@ -402,10 +385,8 @@ def get_and_prepare_path(folder_name):
     full_path.mkdir(parents=True, exist_ok=True)
     return full_path
 
-#--------------------------Batch LLM Connection -------------
 
 def key_word_filtering(emails: list[dict], save_path = '.'):
-    # List to collect data for the CSV
     csv_data = []
     filtered = []
     stage1_verbose = len(emails) <= 200
@@ -416,14 +397,12 @@ def key_word_filtering(emails: list[dict], save_path = '.'):
         kw = keyword_score(text)
         e["_kw"] = kw
 
-        # Determine status
         if kw["cats_hit"] >= 1 and kw["total"] >= 1:
             filtered.append(e)
             status = "PASS"
         else:
             status = "skip"
 
-        # Collect data for the CSV/DataFrame
         csv_data.append({
             "id": e.get("id", "?"),
             "total_hits": kw["total"],
@@ -440,7 +419,6 @@ def key_word_filtering(emails: list[dict], save_path = '.'):
         elif i % 25000 == 0 or i == len(emails):
             print(f"  … scanned {i}/{len(emails)} emails")
 
-    # --- Save to CSV and Print Summary ---
     df_results = pd.DataFrame(csv_data)
     df_results.to_csv(os.path.join(save_path, "full_keyword_filter_stat.csv"), index=False)
 
@@ -454,7 +432,6 @@ def key_word_filtering(emails: list[dict], save_path = '.'):
     filtered.sort(key=lambda x: (x["_kw"]["cats_hit"], x["_kw"]["total"]), reverse=True)
     print(f"\n  → {len(filtered)}/{len(emails)} emails passed keyword filter")
 
-    # Returning dummy values for the tuple to match your original signature
     return df_results, filtered
 
 def get_or_fetch_enron_corpus(save_path: str) -> list[dict]:
@@ -465,20 +442,16 @@ def get_or_fetch_enron_corpus(save_path: str) -> list[dict]:
     file_name = "emros_curpose.json"  # Using your specific filename
     full_path = os.path.join(save_path, file_name)
 
-    # 1. Check if the file already exists
     if os.path.exists(full_path):
         print(f"Loading existing corpus from: {full_path}")
         with open(full_path, "r", encoding="utf-8") as f:
             return json.load(f)
 
-    # 2. If it doesn't exist, call your scroll function
     print("Corpus not found locally. Starting Elasticsearch scroll...")
     emails = load_corpus_elasticsearch_scroll()
 
-    # 3. Save the results to the path
     print(f"Saving {len(emails)} emails to {full_path}...")
 
-    # Ensure the directory exists
     os.makedirs(save_path, exist_ok=True)
 
     with open(full_path, "w", encoding="utf-8") as f:
@@ -493,13 +466,10 @@ def download_and_process_gemini_batch(job_name, original_emails, save_path, clie
     Polls for batch completion, downloads the JSONL results,
     maps them back to original metadata, and builds the final DataFrame.
     """
-    # 1. Map original emails by ID for fast lookup
-    # Important: Your upload function MUST set custom_id to str(email['id'])
     email_map = {str(e.get('id')): e for e in original_emails}
 
     print(f"\n[Stage 2] Monitoring Batch Job: {job_name}...")
 
-    # 2. Wait for completion
     while True:
         batch_job = client.batches.get(name=job_name)
         state = batch_job.state.name
@@ -512,18 +482,13 @@ def download_and_process_gemini_batch(job_name, original_emails, save_path, clie
         print(f" Current state: {state}... (waiting 30s)", end="\r")
         time.sleep(30)
 
-    # 3. Retrieve and Parse Results
     results = []
 
-    # Check if results are in a file (standard for large batches)
     if batch_job.dest and batch_job.dest.file_name:
         file_content = client.files.download(file=batch_job.dest.file_name)
-        # Gemini Batch output is JSONL (one JSON object per line)
         raw_lines = file_content.decode('utf-8').splitlines()
     else:
-        # Fallback for inline responses if small
         print("No result file found. Checking inline responses...")
-        # Note: If your batch used 'inlined_responses', you'd iterate batch_job.dest.inlined_responses
         return None, None
 
     output_filename = os.path.join(save_path, "batch_results.jsonl")
@@ -543,16 +508,12 @@ def download_and_process_gemini_batch(job_name, original_emails, save_path, clie
         if not e: continue
 
         try:
-            # Extract text from the candidate
-            # Gemini response structure: response -> candidates[0] -> content -> parts[0] -> text
             resp = item.get("response")
             text = resp["candidates"][0]["content"]["parts"][0]["text"].strip()
 
-            # Clean JSON formatting
             text = re.sub(r"^```json\s*", "", text)
             text = re.sub(r"\s*```$", "", text)
 
-            # Parse the model's structured scoring
             r = json.loads(text)
 
             e["llm_scores"] = r.get("scores", {})
@@ -568,7 +529,6 @@ def download_and_process_gemini_batch(job_name, original_emails, save_path, clie
 
         results.append(e)
 
-    # 4. Sorting & DataFrame Building
     results.sort(key=lambda x: x.get("llm_total", 0), reverse=True)
 
     rows = []
@@ -587,17 +547,14 @@ def download_and_process_gemini_batch(job_name, original_emails, save_path, clie
             "SUSPICIOUS" if e.get("llm_total", 0) >= SUSPICIOUS_THRESHOLD else "NORMAL",
             "rationale": e.get("rationale", ""),
         }
-        # Inject specific rubric questions as columns
         for q in RUBRIC:
             row[q] = e.get("llm_scores", {}).get(q, "")
         rows.append(row)
 
     df = pd.DataFrame(rows)
 
-    # ── Top 5 ──
     top5 = []
     try:
-        # Added the 'key' argument to specify sorting by the numeric value
         top5 = sorted(
             [e for e in results if e.get("llm_total", 0) >= SUSPICIOUS_THRESHOLD],
             key=lambda x: x.get("llm_total", 0),
@@ -616,7 +573,6 @@ def download_and_process_gemini_batch(job_name, original_emails, save_path, clie
         print(f"       From    : {e['from']}")
         print(f"       Evidence: {e.get('rationale', '')}")
 
-    # ── Save outputs ──
     df.to_csv(os.path.join(save_path, "enron_scored_emails.csv"), index=False)
     with open(os.path.join(save_path, "enron_top5.json"), "w") as f:
         out = [{k: v for k, v in e.items() if not k.startswith("_")} for e in top5]
@@ -655,10 +611,8 @@ def run_pipeline(emails: list[dict], save_path="") -> tuple[pd.DataFrame, list[d
     print(f"{'=' * 60}")
     print(f"  Corpus size : {len(emails)} emails")
 
-    # ── Stage 1: keyword filter ──
     _, filtered = key_word_filtering(emails, save_path)
 
-    # ── Stage 2: Batch-Processed Async LLM Scoring ──
     filtered_emails = filtered[:MAX_EMAILS_FOR_LLM]  # All emails that passed keywords
     total_to_process = len(filtered_emails)
     print(f"\n  Total Processed : {total_to_process} emails")
@@ -667,7 +621,6 @@ def run_pipeline(emails: list[dict], save_path="") -> tuple[pd.DataFrame, list[d
 
     client = genai.Client(api_key=API_KEY)
 
-    # Upload the file to the File API
     uploaded_file = client.files.upload(
         file=file_path,
         config=types.UploadFileConfig(display_name='enron-batch-requests', mime_type='jsonl')
@@ -676,7 +629,7 @@ def run_pipeline(emails: list[dict], save_path="") -> tuple[pd.DataFrame, list[d
     print(f"Uploaded file: {uploaded_file.name}")
 
     batch_job = client.batches.create(
-        model=MODEL,  # 'models/gemini-1.5-flash'
+        model=MODEL,  
         src=uploaded_file.name
     )
 
@@ -685,9 +638,7 @@ def run_pipeline(emails: list[dict], save_path="") -> tuple[pd.DataFrame, list[d
     df, top5 = download_and_process_gemini_batch(job_name, filtered_emails, save_path, client)
 
     return df, top5
-# ─────────────────────────────────────────────
-# ENTRY POINT
-# ─────────────────────────────────────────────
+
 
 if __name__ == "__main__":
 
